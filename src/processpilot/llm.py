@@ -136,7 +136,7 @@ async def enhance_with_llm(analysis: Analysis, settings: Settings) -> Analysis:
     ) as client:
         try:
             resp = await client.post(
-                f"{settings.llm_base_url}/chat/completions",
+                f"{settings.llm_base_url.rstrip('/')}/chat/completions",
                 headers=headers,
                 json=payload,
             )
@@ -144,6 +144,8 @@ async def enhance_with_llm(analysis: Analysis, settings: Settings) -> Analysis:
             body = resp.json()
             raw = body["choices"][0]["message"]["content"]
             obj = json.loads(raw)
+            if not isinstance(obj, dict):
+                raise LLMError("Некорректный ответ модели")
             action = _safe_action(obj.get("action", ""))
             usage = body.get("usage") or {}
             if not isinstance(usage, dict):
