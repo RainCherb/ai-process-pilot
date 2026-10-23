@@ -147,3 +147,33 @@ def test_invalid_remote_configuration_fails_without_persisting_ticket(tmp_path):
         )
         assert response.status_code == 502
         assert client.get("/api/stats").json()["total"] == 0
+
+
+def test_llm_rejects_json_array_response_instead_of_crashing():
+    payload = {
+        "choices": [{"message": {"content": "[]"}}],
+        "usage": {},
+    }
+    with fake_llm_server(payload) as (port, _):
+        settings = Settings(
+            mode="remote",
+            llm_base_url=f"http://127.0.0.1:{port}/v1",
+            llm_model="test-model",
+        )
+        with pytest.raises(LLMError):
+            asyncio.run(enhance_with_llm(classify("Нужна цена тарифа"), settings))
+
+
+def test_llm_trailing_slash_does_not_create_double_slash():
+    payload = {
+        "choices": [{"message": {"content": json.dumps({"action": "Проверить заявку вручную."})}}],
+        "usage": {},
+    }
+    with fake_llm_server(payload) as (port, captured):
+        settings = Settings(
+            mode="remote",
+            llm_base_url=f"http://127.0.0.1:{port}/v1/",
+            llm_model="test-model",
+        )
+        asyncio.run(enhance_with_llm(classify("Нужна цена тарифа"), settings))
+    assert captured["path"] == "/v1/chat/completions"
