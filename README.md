@@ -6,7 +6,7 @@
 
 [![Tests and quality](https://github.com/RainCherb/ai-process-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/RainCherb/ai-process-pilot/actions/workflows/ci.yml) ![Offline by default](https://img.shields.io/badge/mode-offline%20by%20default-68b8a0) ![Python](https://img.shields.io/badge/Python-3.11%2B-3677a2) ![License](https://img.shields.io/badge/license-MIT-a0baca)
 
-**Текущая версия: 1.0.2.** Два прохода аудита исправили обработку невалидных входов, утечку SQLite-соединений, конкурентную загрузку демо, неоднозначную маршрутизацию, ложные юридические/срочные срабатывания, некорректный Unicode, небезопасные формы LLM URL и повреждённые usage-метаданные. Подробности: [audit-2026-10-24.md](docs/audit-2026-10-24.md).
+**Текущая версия: 1.0.3.** Три прохода аудита исправили обработку невалидных входов, утечку SQLite-соединений, конкурентную загрузку демо, неоднозначную маршрутизацию, ложные юридические/срочные срабатывания, некорректный Unicode, небезопасные формы LLM URL и повреждённые usage-метаданные. Подробности: [audit-2026-10-24.md](docs/audit-2026-10-24.md).
 
 **Что это:** рабочая система первичной обработки входящих клиентских запросов. Получает сообщение, определяет категорию и срочность, предлагает ответственную команду и дальнейшее действие, сохраняет обезличенную часть информации, показывает очередь и условную экономику процесса.
 
@@ -119,7 +119,7 @@ python -m processpilot.mcp_server
 
 ## Технологии
 
-**Backend:** Python 3.11+, FastAPI, Pydantic, SQLite, httpx. **Frontend:** HTML, CSS, JavaScript без внешних зависимостей. **Интеграции:** optional OpenAI-compatible LLM, MCP / FastMCP. **Доставка:** Docker, Docker Compose, GitHub Actions, pytest.
+**Backend:** Python 3.11+, FastAPI, Pydantic, SQLite, httpx. **Frontend:** HTML, CSS, JavaScript без внешних зависимостей. **Интеграции:** optional OpenAI-compatible LLM, MCP 2.x / MCPServer. **Доставка:** Docker, Docker Compose, GitHub Actions, pytest.
 
 ## Документация
 
