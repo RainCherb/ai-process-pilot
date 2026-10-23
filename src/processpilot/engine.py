@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from dataclasses import asdict, dataclass
 
-_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}(?![\w.-])")
+_EMAIL_RE = re.compile(r"(?<![\w.+-])[\w.+-]+@(?:[\w-]+\.)+[\w-]{2,}(?![\w.-])", re.UNICODE)
 _PHONE_RE = re.compile(r"(?<!\w)(?:\+7|8)[\s(\-]*(?:\d[\s)\-]*){10}(?!\w)")
 
 CATEGORIES = {
