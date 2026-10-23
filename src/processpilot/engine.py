@@ -33,8 +33,34 @@ CATEGORIES = {
         "action": "Проверить статус заказа и срок исполнения.",
     },
 }
-URGENT_TERMS = ("срочно", "немедленно", "критич", "утечк", "недоступ", "все клиенты", "urgent", "outage", "security", "взлом")
-ESCALATE_TERMS = ("юрист", "суд", "персональн", "паспорт", "штраф", "договор", "lawyer", "legal", "gdpr")
+URGENT_RULES = (
+    ("prefix", "срочн"),
+    ("prefix", "немедленн"),
+    ("prefix", "критич"),
+    ("prefix", "утечк"),
+    ("prefix", "недоступ"),
+    ("prefix", "взлом"),
+    ("phrase", "все клиенты"),
+    ("exact", "urgent"),
+    ("exact", "outage"),
+    ("phrase", "security incident"),
+    ("phrase", "security breach"),
+    ("phrase", "security vulnerability"),
+)
+ESCALATE_RULES = (
+    ("prefix", "юрист"),
+    ("prefix", "судеб"),
+    ("inflected", "суд"),
+    ("prefix", "персональн"),
+    ("inflected", "паспорт"),
+    ("inflected", "штраф"),
+    ("inflected", "договор"),
+    ("prefix", "договорн"),
+    ("exact", "lawyer"),
+    ("exact", "legal"),
+    ("exact", "gdpr"),
+)
+CATEGORY_TIE_PRIORITY = {"technical": 0, "billing": 1, "delivery": 2, "sales": 3}
 
 
 @dataclass(frozen=True)
@@ -72,19 +98,35 @@ def _category_signal_matches(text: str, signal: str) -> bool:
     return signal in text
 
 
-def _risk_term_matches(text: str, term: str) -> bool:
-    """Match a risk term from the start of a word to avoid `несрочно`/`посуда` false positives."""
-    if " " in term:
+def _risk_rule_matches(text: str, kind: str, term: str) -> bool:
+    """Match explicit risk rules without accidental substring escalation."""
+    if kind == "phrase":
         return term in text
-    if term.isascii():
-        return re.search(rf"(?<![a-z0-9_]){re.escape(term)}(?![a-z0-9_])", text) is not None
-    return re.search(rf"(?<!\w){re.escape(term)}", text, flags=re.UNICODE) is not None
+    if kind == "exact":
+        return re.search(rf"(?<!\w){re.escape(term)}(?!\w)", text, flags=re.UNICODE) is not None
+    if kind == "prefix":
+        return re.search(rf"(?<!\w){re.escape(term)}\w*", text, flags=re.UNICODE) is not None
+    if kind == "inflected":
+        # Common noun inflections only. This deliberately avoids words such as
+        # `судно` and `договорённость`, which are not legal-risk signals.
+        suffixes = r"(?:а|у|ом|е|ы|ов|ам|ами|ах)?"
+        return re.search(
+            rf"(?<!\w){re.escape(term)}{suffixes}(?!\w)",
+            text,
+            flags=re.UNICODE,
+        ) is not None
+    raise ValueError(f"Unknown risk rule kind: {kind}")
 
 
 def classify(text: str) -> Analysis:
-    if not text.strip():
+    clean = text.strip()
+    if not clean:
         raise ValueError("Текст обращения не должен быть пустым")
-    masked, pii = mask_contact_details(text.strip())
+    try:
+        clean.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Текст содержит некорректные Unicode-символы") from exc
+    masked, pii = mask_contact_details(clean)
     lower = masked.casefold().replace("ё", "е")
     scores: dict[str, int] = {}
     reasons: list[str] = []
@@ -95,7 +137,16 @@ def classify(text: str) -> Analysis:
         hits = [pattern for pattern in normalized_patterns if _category_signal_matches(lower, pattern)]
         if hits:
             scores[category] = len(hits)
-    key = max(scores, key=lambda k: scores[k]) if scores else "general"
+    ambiguous_categories: list[str] = []
+    if scores:
+        top_score = max(scores.values())
+        ambiguous_categories = [name for name, score in scores.items() if score == top_score]
+        key = min(
+            ambiguous_categories,
+            key=lambda name: CATEGORY_TIE_PRIORITY.get(name, 999),
+        )
+    else:
+        key = "general"
     if key == "general":
         label, owner, action = ("Общее обращение", "Первая линия", "Изучить запрос и определить следующий шаг.")
         reasons.append("Не найдены выраженные признаки профильной категории")
@@ -103,10 +154,23 @@ def classify(text: str) -> Analysis:
         category = CATEGORIES[key]
         label, owner, action = category["label"], category["owner"], category["action"]
         reasons.append(f"Совпадение с тематикой «{label}» ({scores[key]} признака/ов)")
+        if len(ambiguous_categories) > 1:
+            labels = [CATEGORIES[name]["label"] for name in ambiguous_categories]
+            reasons.append(
+                "Неоднозначная тематика: " + ", ".join(labels)
+                + "; требуется проверка выбранного маршрута"
+            )
 
-    is_urgent = any(_risk_term_matches(lower, term) for term in URGENT_TERMS)
-    requires_human = any(_risk_term_matches(lower, term) for term in ESCALATE_TERMS)
-    priority = "high" if is_urgent else "medium" if requires_human or key == "technical" else "low"
+    is_urgent = any(_risk_rule_matches(lower, kind, term) for kind, term in URGENT_RULES)
+    requires_human = any(_risk_rule_matches(lower, kind, term) for kind, term in ESCALATE_RULES)
+    is_ambiguous = len(ambiguous_categories) > 1
+    priority = (
+        "high"
+        if is_urgent
+        else "medium"
+        if requires_human or key == "technical" or is_ambiguous
+        else "low"
+    )
     if is_urgent:
         reasons.append("Обнаружен признак срочности — требуется оперативная проверка")
     if requires_human:
@@ -114,7 +178,11 @@ def classify(text: str) -> Analysis:
     if pii:
         reasons.append("Похожие на телефон/email данные замаскированы перед хранением")
     # Triage is advisory. Even 'auto-draft' must be reviewed by a person.
-    handling = "human-review" if priority == "high" or requires_human else "draft-for-review"
+    handling = (
+        "human-review"
+        if priority == "high" or requires_human or is_ambiguous
+        else "draft-for-review"
+    )
     return Analysis(
         category=key,
         category_label=label,

@@ -38,6 +38,27 @@ def test_keyword_matching_avoids_common_substring_false_positives():
     assert classify("Нужно обсудить border design").category == "general"
     assert classify("We build industrial automation").category == "general"
 
+
+def test_legal_risk_matching_avoids_unrelated_word_prefixes():
+    assert classify("Судно прибыло в порт вовремя").priority == "low"
+    assert classify("Это просто договорённость о встрече").priority == "low"
+    assert classify("Нужно подать документы в суд").handling_mode == "human-review"
+    assert classify("Получили судебный иск").handling_mode == "human-review"
+    assert classify("Вопрос по договору поставки").handling_mode == "human-review"
+
+
+def test_ambiguous_category_is_explicit_and_requires_review():
+    item = classify("Ошибка оплаты заказа")
+    assert item.category == "technical"
+    assert item.priority == "medium"
+    assert item.handling_mode == "human-review"
+    assert any("Неоднозначная тематика" in reason for reason in item.reasons)
+
+
+def test_generic_security_mention_is_not_automatically_an_outage():
+    assert classify("Планируем security review в следующем месяце").priority == "low"
+    assert classify("Security incident затронул всех клиентов").priority == "high"
+
 def test_high_priority_stays_human_review():
     x = classify("СРОЧНО! Критичный сбой, не работает оплата")
     assert x.priority == "high"
@@ -69,6 +90,8 @@ def test_mask_does_not_claim_to_remove_everything():
 def test_empty_rejected():
     with pytest.raises(ValueError):
         classify("   ")
+    with pytest.raises(ValueError):
+        classify("hello \ud800 world")
 
 
 def test_mcp_preview_input_has_same_bounds_as_http_api():
@@ -77,6 +100,8 @@ def test_mcp_preview_input_has_same_bounds_as_http_api():
         _validated_text("    ")
     with pytest.raises(ValueError):
         _validated_text("x" * 8001)
+    with pytest.raises(ValueError):
+        _validated_text("hello \ud800 world")
 
 
 def test_cost_formula_uses_assumption_not_live_price():
@@ -91,6 +116,12 @@ def test_url_validator():
         validate_base_url("file:///etc/passwd")
     with pytest.raises(LLMError):
         validate_base_url("http://169.254.169.254/v1")
+    with pytest.raises(LLMError):
+        validate_base_url("http://metadata.google.internal./v1")
+    with pytest.raises(LLMError):
+        validate_base_url("http://169.254.169.254./v1")
+    with pytest.raises(LLMError):
+        validate_base_url("http://2852039166/v1")
     with pytest.raises(LLMError):
         validate_base_url("https://alice:secret@example.org/v1")
     with pytest.raises(LLMError):

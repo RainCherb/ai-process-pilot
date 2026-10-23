@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import socket
 from dataclasses import replace
 from urllib.parse import urlsplit
 
@@ -39,16 +40,57 @@ def validate_base_url(url: str) -> None:
         raise LLMError("Некорректный порт LLM API") from exc
     if parsed.path not in ("", "/", "/v1", "/v1/"):
         raise LLMError("PILOT_LLM_BASE_URL должен указывать на корень API (например /v1)")
-    # URL comes from the deployer, not from HTTP clients. Block common cloud metadata targets.
-    if parsed.hostname in ("metadata.google.internal", "169.254.169.254"):
+    # Canonicalize a trailing DNS dot before security checks. Without this,
+    # metadata.google.internal. and 169.254.169.254. bypass exact comparisons.
+    hostname = parsed.hostname.rstrip(".").lower()
+    if hostname in ("metadata.google.internal", "169.254.169.254"):
         raise LLMError("Адрес metadata-сервиса запрещён")
-    try:
-        addr = ipaddress.ip_address(parsed.hostname)
-        if addr.is_link_local or addr.is_multicast or addr.is_unspecified:
-            raise LLMError("Небезопасный сетевой адрес")
-    except ValueError:
-        pass
 
+    addr = None
+    try:
+        addr = ipaddress.ip_address(hostname)
+    except ValueError:
+        # Some resolvers accept legacy numeric IPv4 forms such as 2852039166.
+        # Normalize those too so a metadata/link-local target cannot hide behind them.
+        try:
+            addr = ipaddress.ip_address(socket.inet_aton(hostname))
+        except OSError:
+            pass
+    if addr and (addr.is_link_local or addr.is_multicast or addr.is_unspecified or addr.is_reserved):
+        raise LLMError("Небезопасный сетевой адрес")
+
+
+
+
+def _safe_token_count(value, field: str) -> int:
+    """Validate provider-reported token usage so malformed metadata cannot crash the API."""
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        raise LLMError(f"Некорректное значение {field} в статистике LLM")
+    if isinstance(value, float):
+        if not value.is_integer():
+            raise LLMError(f"Некорректное значение {field} в статистике LLM")
+    try:
+        count = int(value)
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise LLMError(f"Некорректное значение {field} в статистике LLM") from exc
+    if not 0 <= count <= 1_000_000_000:
+        raise LLMError(f"Некорректное значение {field} в статистике LLM")
+    return count
+
+
+def _safe_action(value) -> str:
+    if not isinstance(value, str):
+        raise LLMError("Некорректный ответ модели")
+    action = value.strip()
+    try:
+        action.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise LLMError("Некорректный ответ модели") from exc
+    if not (4 <= len(action) <= 220):
+        raise LLMError("Некорректный ответ модели")
+    return action
 
 def estimate_cost_usd(prompt_tokens: int, completion_tokens: int, settings: Settings) -> float:
     return round(
@@ -102,15 +144,12 @@ async def enhance_with_llm(analysis: Analysis, settings: Settings) -> Analysis:
             body = resp.json()
             raw = body["choices"][0]["message"]["content"]
             obj = json.loads(raw)
-            action = obj.get("action", "")
-            if not isinstance(action, str):
-                raise LLMError("Некорректный ответ модели")
-            action = action.strip()
-            if not (4 <= len(action) <= 220):
-                raise LLMError("Некорректный ответ модели")
+            action = _safe_action(obj.get("action", ""))
             usage = body.get("usage") or {}
-            in_tokens = max(0, int(usage.get("prompt_tokens") or 0))
-            out_tokens = max(0, int(usage.get("completion_tokens") or 0))
+            if not isinstance(usage, dict):
+                raise LLMError("Некорректная статистика использования LLM")
+            in_tokens = _safe_token_count(usage.get("prompt_tokens"), "prompt_tokens")
+            out_tokens = _safe_token_count(usage.get("completion_tokens"), "completion_tokens")
             return replace(
                 analysis,
                 action=action,

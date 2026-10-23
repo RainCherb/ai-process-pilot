@@ -15,6 +15,10 @@ MAX_TICKET_CHARS = 8000
 
 def _validated_text(text: str) -> str:
     value = text.strip()
+    try:
+        value.encode("utf-8")
+    except UnicodeEncodeError as exc:
+        raise ValueError("Текст содержит некорректные Unicode-символы") from exc
     if len(value) < 5:
         raise ValueError("Текст обращения должен содержать не менее 5 символов")
     if len(value) > MAX_TICKET_CHARS:

@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ai-process-pilot"
-version = "1.0.1"
+version = "1.0.2"
 description = "Local-first AI work intake, safe model routing, cost estimates and MCP tools for small businesses"
 readme = "README.md"
 requires-python = ">=3.11"

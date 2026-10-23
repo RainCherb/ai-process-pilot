@@ -38,6 +38,20 @@ def test_whitespace_only_and_short_after_trim_are_validation_errors(tmp_path):
         assert response.json()["source"] == "crm"
 
 
+
+def test_unknown_json_fields_are_rejected_instead_of_silently_ignored(tmp_path):
+    with make_client(tmp_path) as client:
+        ticket = client.post(
+            "/api/tickets",
+            json={"text": "Обычный запрос клиента", "use_llm_typo": True},
+        )
+        assert ticket.status_code == 422
+        roi = client.post(
+            "/api/roi",
+            json={"minutes_saved_per_ticket": 4, "hourly_cost_typo": 900},
+        )
+        assert roi.status_code == 422
+
 def test_invalid_and_remote_opt_in(tmp_path):
     with make_client(tmp_path) as client:
         assert client.post("/api/tickets", json={"text": "no"}).status_code == 422
@@ -58,6 +72,17 @@ def test_invalid_and_remote_opt_in(tmp_path):
 
 
 
+
+
+def test_invalid_unicode_escape_is_rejected_without_crashing(tmp_path):
+    with make_client(tmp_path) as client:
+        response = client.post(
+            "/api/tickets",
+            content=b'{"text":"hello \\ud800 world"}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422
+        assert client.get("/api/stats").json()["total"] == 0
 
 def test_untrusted_host_is_rejected_to_reduce_dns_rebinding_risk(tmp_path):
     with make_client(tmp_path) as client:

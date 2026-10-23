@@ -96,6 +96,43 @@ def test_llm_rejects_empty_action_after_trimming():
             asyncio.run(enhance_with_llm(classify("Нужна цена тарифа"), settings))
 
 
+
+@pytest.mark.parametrize("bad_usage", [
+    {"prompt_tokens": float("inf"), "completion_tokens": 2},
+    {"prompt_tokens": -1, "completion_tokens": 2},
+    {"prompt_tokens": True, "completion_tokens": 2},
+    {"prompt_tokens": 1.5, "completion_tokens": 2},
+    "not-a-dict",
+])
+def test_malformed_llm_usage_becomes_controlled_error(bad_usage):
+    payload = {
+        "choices": [{"message": {"content": json.dumps({"action": "Проверить заявку вручную."})}}],
+        "usage": bad_usage,
+    }
+    with fake_llm_server(payload) as (port, _):
+        settings = Settings(
+            mode="remote",
+            llm_base_url=f"http://127.0.0.1:{port}/v1",
+            llm_model="test-model",
+        )
+        with pytest.raises(LLMError):
+            asyncio.run(enhance_with_llm(classify("Нужна цена тарифа"), settings))
+
+
+def test_llm_action_with_invalid_unicode_is_rejected():
+    payload = {
+        "choices": [{"message": {"content": '{"action":"hello \\ud800 world"}'}}],
+        "usage": {},
+    }
+    with fake_llm_server(payload) as (port, _):
+        settings = Settings(
+            mode="remote",
+            llm_base_url=f"http://127.0.0.1:{port}/v1",
+            llm_model="test-model",
+        )
+        with pytest.raises(LLMError):
+            asyncio.run(enhance_with_llm(classify("Нужна цена тарифа"), settings))
+
 def test_invalid_remote_configuration_fails_without_persisting_ticket(tmp_path):
     settings = Settings(
         mode="remote",

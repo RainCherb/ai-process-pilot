@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .config import Settings
 from .engine import classify
@@ -28,6 +28,8 @@ SAMPLES = [
 
 
 class TicketInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     text: str = Field(min_length=5, max_length=8000)
     source: str = Field(default="web", min_length=1, max_length=32, pattern=r"^[a-zA-Z0-9_-]+$")
     use_llm: bool = False
@@ -35,7 +37,14 @@ class TicketInput(BaseModel):
     @field_validator("text", mode="before")
     @classmethod
     def normalize_text(cls, value):
-        return value.strip() if isinstance(value, str) else value
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        try:
+            value.encode("utf-8")
+        except UnicodeEncodeError as exc:
+            raise ValueError("Текст содержит некорректные Unicode-символы") from exc
+        return value
 
     @field_validator("source", mode="before")
     @classmethod
@@ -44,6 +53,8 @@ class TicketInput(BaseModel):
 
 
 class RoiInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     minutes_saved_per_ticket: float = Field(default=4.0, ge=0, le=240, allow_inf_nan=False)
     hourly_cost_rub: float = Field(default=900.0, ge=0, le=1_000_000, allow_inf_nan=False)
 
@@ -94,7 +105,9 @@ def _json_safe(value):
         return {str(key): _json_safe(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [_json_safe(item) for item in value]
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if isinstance(value, str):
+        return value.encode("utf-8", "backslashreplace").decode("utf-8")
+    if value is None or isinstance(value, (int, float, bool)):
         return value
     return str(value)
 
@@ -107,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store.init()
         yield
 
-    app = FastAPI(title="AI Process Pilot", version="1.0.1", lifespan=lifespan)
+    app = FastAPI(title="AI Process Pilot", version="1.0.2", lifespan=lifespan)
     app.state.store = store
     app.state.settings = config
 
