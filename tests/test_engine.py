@@ -80,6 +80,10 @@ def test_mask_emails_and_russian_phones():
     assert "[EMAIL]" in redacted
     assert "[PHONE]" in redacted
 
+    idn, found_idn = mask_contact_details("Пишите на user@пример.рф")
+    assert found_idn is True
+    assert "пример.рф" not in idn
+
 
 def test_mask_does_not_claim_to_remove_everything():
     text, detected = mask_contact_details("Меня зовут Анна")
@@ -140,3 +144,10 @@ def test_non_finite_numeric_environment_values_fall_back(monkeypatch):
     assert settings.llm_timeout == 15.0
     assert settings.input_usd_per_million == 0.25
     assert settings.output_usd_per_million == 0.0
+
+
+def test_mcp_server_constructs_with_installed_sdk():
+    from processpilot.mcp_server import create_mcp_server
+
+    server = create_mcp_server()
+    assert server is not None
