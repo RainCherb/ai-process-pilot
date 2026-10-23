@@ -120,7 +120,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store.init()
         yield
 
-    app = FastAPI(title="AI Process Pilot", version="1.0.2", lifespan=lifespan)
+    app = FastAPI(title="AI Process Pilot", version="1.0.3", lifespan=lifespan)
     app.state.store = store
     app.state.settings = config
 
@@ -223,8 +223,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/roi")
     def roi(input: RoiInput):
         stats = store.stats()
-        hours = round(stats["total"] * input.minutes_saved_per_ticket / 60, 2)
-        value = round(hours * input.hourly_cost_rub, 2)
+        raw_hours = stats["total"] * input.minutes_saved_per_ticket / 60
+        hours = round(raw_hours, 2)
+        value = round(raw_hours * input.hourly_cost_rub, 2)
         return {
             "tickets": stats["total"],
             "hours_assumption": hours,
