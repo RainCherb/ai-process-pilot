@@ -28,11 +28,11 @@ def _validated_text(text: str) -> str:
 
 def create_mcp_server():
     try:
-        from mcp.server.fastmcp import FastMCP
+        from mcp.server import MCPServer
     except ImportError as exc:
         raise RuntimeError("Install the MCP extra first: pip install -e '.[mcp]'") from exc
 
-    mcp = FastMCP("AI Process Pilot")
+    mcp = MCPServer("AI Process Pilot", version="1.0.3")
     store = Store(Settings.from_env().db_path)
     store.init()
 
