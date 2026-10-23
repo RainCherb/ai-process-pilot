@@ -153,3 +153,14 @@ def test_no_duplicate_data_accidentally_on_restart(tmp_path):
         client.post("/api/tickets", json={"text": "Обычный запрос от клиента"})
     with TestClient(create_app(s)) as client:
         assert client.get("/api/stats").json()["total"] == 1
+
+
+def test_roi_value_uses_unrounded_hours(tmp_path):
+    with make_client(tmp_path) as client:
+        client.post("/api/tickets", json={"text": "Обычный запрос клиента"})
+        roi = client.post(
+            "/api/roi",
+            json={"minutes_saved_per_ticket": 4, "hourly_cost_rub": 900},
+        ).json()
+        assert roi["hours_assumption"] == 0.07
+        assert roi["potential_labor_value_rub"] == 60.0
