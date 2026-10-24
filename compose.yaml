@@ -8,6 +8,12 @@ services:
       PILOT_DB: /data/processpilot.sqlite3
     volumes:
       - pilot-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    init: true
     restart: unless-stopped
 volumes:
   pilot-data:

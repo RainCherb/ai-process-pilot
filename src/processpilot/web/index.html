@@ -20,6 +20,8 @@
         <a class="nav-item active" href="#overview"><span class="nav-icon">▦</span> Обзор <span class="nav-caret">↗</span></a>
         <a class="nav-item" href="#inbox"><span class="nav-icon">▤</span> Очередь обращений</a>
         <a class="nav-item" href="#simulator"><span class="nav-icon">✧</span> AI-анализатор</a>
+        <a class="nav-item" href="#operations"><span class="nav-icon">⇉</span> Пакетная обработка</a>
+        <a class="nav-item" href="#audit"><span class="nav-icon">◎</span> Журнал действий</a>
         <a class="nav-item" href="#economics"><span class="nav-icon">◈</span> Экономика ИИ</a>
       </nav>
       <div class="sidebar-label integrations-label">ИНТЕГРАЦИИ</div>
@@ -32,7 +34,7 @@
     </aside>
 
     <main class="main" id="overview">
-      <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>Overview</strong></div><div class="top-actions"><span class="version">v1.0.3 • OPEN SOURCE</span><a href="/docs" target="_blank" rel="noreferrer" class="top-link">API Docs ↗</a></div></header>
+      <header class="topbar"><div class="breadcrumb">Workspace <span>/</span> <strong>Overview</strong></div><div class="top-actions"><span class="version">v1.1.0 • OPEN SOURCE</span><a href="/docs" target="_blank" rel="noreferrer" class="top-link">API Docs ↗</a></div></header>
       <div class="content">
         <div class="eyebrow"><span class="eyebrow-dot"></span> СИСТЕМА ИИ-АВТОМАТИЗАЦИИ</div>
         <div class="heading-row"><div><h1>Команда работает.<br><em>Рутина — на автопилоте.</em></h1><p class="lead">Обращения → классификация → нужная команда → решение. Один прозрачный процесс вместо ручной сортировки.</p></div><div class="hero-ornament" aria-hidden="true"><div class="orb orb-a"></div><div class="orb orb-b"></div><div class="orb orb-c"></div><div class="orb-core">✳</div></div></div>
@@ -65,7 +67,29 @@
           <div id="ticket-detail" class="detail" hidden></div>
         </section>
 
-        <section class="economics-grid" id="economics"><div class="panel roi-panel"><div class="panel-heading"><div><span class="panel-kicker">04 / БИЗНЕС-МЕТРИКИ</span><h2>Экономика автоматизации</h2></div></div><p class="panel-muted">Моделирование потенциальной выгоды. Не является подтверждением реальной экономии.</p><div class="roi-fields"><label>Минут на одно обращение<input id="roi-minutes" type="number" min="0" max="240" step="0.5" value="4"></label><label>Стоимость часа сотрудника, ₽<input id="roi-rate" type="number" min="0" max="1000000" step="50" value="900"></label></div><div class="roi-output"><div><span>ПОТЕНЦИАЛЬНАЯ СТОИМОСТЬ ВРЕМЕНИ</span><strong id="roi-value">0 ₽</strong></div><span class="roi-mark">↗</span></div><p class="tiny">Без вычета стоимости API, инфраструктуры и проверки оператором. Показатели USD и RUB не смешиваются.</p></div>
+        <section class="workspace-grid operations-grid" id="operations">
+          <article class="panel batch-panel">
+            <div class="panel-heading"><div><span class="panel-kicker">04 / ПАКЕТНАЯ ОБРАБОТКА</span><h2>До 50 обращений за один запуск</h2></div><span class="panel-label">BATCH</span></div>
+            <p class="panel-muted">Вставьте обращения построчно. Они будут классифицированы локально и сохранены одной транзакцией.</p>
+            <label class="field-label" for="batch-input">ОДНО ОБРАЩЕНИЕ НА СТРОКУ</label>
+            <textarea id="batch-input" placeholder="Ошибка 500 при входе&#10;Нужна цена тарифа&#10;Где мой заказ?" spellcheck="true"></textarea>
+            <div class="form-row">
+              <label class="inline-label" for="batch-source">ИСТОЧНИК</label>
+              <select id="batch-source"><option value="web">Веб-форма</option><option value="telegram">Telegram</option><option value="email">Email</option><option value="crm">CRM</option></select>
+              <span class="batch-counter" id="batch-counter">0 / 50</span>
+              <button class="button-primary batch-submit" id="batch-button" type="button"><span>Обработать пакет</span><span>↗</span></button>
+            </div>
+            <div id="batch-feedback" class="feedback" role="status" aria-live="polite" hidden></div>
+          </article>
+
+          <article class="panel audit-panel" id="audit">
+            <div class="panel-heading"><div><span class="panel-kicker">05 / GOVERNANCE</span><h2>Журнал действий</h2></div><button class="button-outline" id="audit-refresh" type="button">Обновить</button></div>
+            <p class="panel-muted">Append-only события без исходного текста обращений: создание, пакетная загрузка и смены статусов.</p>
+            <div id="audit-events" class="audit-events"><div class="audit-empty">Событий пока нет.</div></div>
+          </article>
+        </section>
+
+        <section class="economics-grid" id="economics"><div class="panel roi-panel"><div class="panel-heading"><div><span class="panel-kicker">06 / БИЗНЕС-МЕТРИКИ</span><h2>Экономика автоматизации</h2></div></div><p class="panel-muted">Моделирование потенциальной выгоды. Не является подтверждением реальной экономии.</p><div class="roi-fields"><label>Минут на одно обращение<input id="roi-minutes" type="number" min="0" max="240" step="0.5" value="4"></label><label>Стоимость часа сотрудника, ₽<input id="roi-rate" type="number" min="0" max="1000000" step="50" value="900"></label></div><div class="roi-output"><div><span>ПОТЕНЦИАЛЬНАЯ СТОИМОСТЬ ВРЕМЕНИ</span><strong id="roi-value">0 ₽</strong></div><span class="roi-mark">↗</span></div><p class="tiny">Без вычета стоимости API, инфраструктуры и проверки оператором. Показатели USD и RUB не смешиваются.</p></div>
         <div class="panel config-panel"><span class="panel-kicker">ПРОЗРАЧНОСТЬ И КОНТРОЛЬ</span><h2>ИИ — под вашим контролем.</h2><div class="config-caps"><span>◎ LOCAL FIRST</span><span>⌁ MCP READY</span><span>◈ REST API</span></div><p>Режим offline — без обращения к внешним моделям. При подключении OpenAI-compatible API используются настроенные вами тарифы, а не выдуманные «текущие» цены.</p><div class="config-footer"><span class="green-dot"></span><span id="config-status">Локальная обработка активна</span><a href="/docs" target="_blank" rel="noreferrer">Документация API ↗</a></div></div></section>
         <footer class="footer"><span>PROCESSPILOT / 2026</span><span>Практика внедрения ИИ • Тестовый контур • Human-in-the-loop</span></footer>
       </div>

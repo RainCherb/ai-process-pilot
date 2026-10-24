@@ -1,4 +1,4 @@
-"""SQLite persistence with per-operation connections."""
+"""SQLite persistence with per-operation connections and an append-only audit trail."""
 from __future__ import annotations
 
 import json
@@ -60,6 +60,19 @@ class Store:
                     status TEXT NOT NULL DEFAULT 'new'
                 )
             """)
+            db.execute("""
+                CREATE TABLE IF NOT EXISTS audit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    ticket_id INTEGER,
+                    details TEXT NOT NULL DEFAULT '{}'
+                )
+            """)
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS idx_audit_events_ticket_id "
+                "ON audit_events(ticket_id)"
+            )
 
     @staticmethod
     def _values(analysis: Analysis, source: str, created_at: str) -> tuple:
@@ -92,17 +105,72 @@ class Store:
             Store._values(analysis, source, utcnow()),
         )
 
+    @staticmethod
+    def _audit(
+        db: sqlite3.Connection,
+        event_type: str,
+        *,
+        ticket_id: int | None = None,
+        details: dict | None = None,
+    ) -> None:
+        db.execute(
+            "INSERT INTO audit_events (created_at, event_type, ticket_id, details) "
+            "VALUES (?, ?, ?, ?)",
+            (
+                utcnow(),
+                event_type,
+                ticket_id,
+                json.dumps(details or {}, ensure_ascii=False, sort_keys=True),
+            ),
+        )
+
+    @staticmethod
+    def _creation_details(analysis: Analysis, source: str) -> dict:
+        return {
+            "source": source,
+            "category": analysis.category,
+            "priority": analysis.priority,
+            "provider": analysis.provider_used,
+        }
+
     def create(self, analysis: Analysis, source: str = "web") -> dict:
         with self.connection() as db:
             cursor = self._insert(db, analysis, source)
-            return self.get(cursor.lastrowid, db=db)
+            ticket_id = int(cursor.lastrowid)
+            self._audit(
+                db,
+                "ticket.created",
+                ticket_id=ticket_id,
+                details=self._creation_details(analysis, source),
+            )
+            return self.get(ticket_id, db=db)
+
+    def create_many(self, items: Iterable[tuple[Analysis, str]]) -> list[dict]:
+        """Create a bounded batch atomically; callers validate the batch size."""
+        prepared = list(items)
+        if not prepared:
+            return []
+        created: list[dict] = []
+        with self.connection() as db:
+            for analysis, source in prepared:
+                cursor = self._insert(db, analysis, source)
+                ticket_id = int(cursor.lastrowid)
+                self._audit(
+                    db,
+                    "ticket.created",
+                    ticket_id=ticket_id,
+                    details=self._creation_details(analysis, source),
+                )
+                created.append(self.get(ticket_id, db=db))
+            self._audit(
+                db,
+                "batch.created",
+                details={"count": len(created), "ticket_ids": [x["id"] for x in created]},
+            )
+        return created
 
     def seed_if_empty(self, analyses: Iterable[Analysis], source: str = "demo") -> int:
-        """Atomically insert demo rows only when the database has no tickets.
-
-        BEGIN IMMEDIATE serializes concurrent seed attempts so two requests cannot both
-        observe an empty table and create duplicate demo data.
-        """
+        """Atomically insert demo rows only when the database has no tickets."""
         rows = list(analyses)
         if not rows:
             return 0
@@ -111,9 +179,23 @@ class Store:
             existing = db.execute("SELECT 1 FROM tickets LIMIT 1").fetchone()
             if existing:
                 return 0
+            ticket_ids: list[int] = []
             for analysis in rows:
-                self._insert(db, analysis, source)
-            return len(rows)
+                cursor = self._insert(db, analysis, source)
+                ticket_id = int(cursor.lastrowid)
+                ticket_ids.append(ticket_id)
+                self._audit(
+                    db,
+                    "ticket.created",
+                    ticket_id=ticket_id,
+                    details=self._creation_details(analysis, source),
+                )
+            self._audit(
+                db,
+                "demo.seeded",
+                details={"count": len(ticket_ids), "ticket_ids": ticket_ids},
+            )
+            return len(ticket_ids)
 
     def get(self, ticket_id: int, db: sqlite3.Connection | None = None) -> dict | None:
         if db is None:
@@ -124,13 +206,48 @@ class Store:
 
     def list(self, limit: int = 100) -> list[dict]:
         with self.connection() as db:
-            rows = db.execute("SELECT * FROM tickets ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+            rows = db.execute(
+                "SELECT * FROM tickets ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
             return [self._record(x) for x in rows]
 
     def update_status(self, ticket_id: int, status: str) -> dict | None:
         with self.connection() as db:
-            db.execute("UPDATE tickets SET status = ? WHERE id = ?", (status, ticket_id))
+            row = db.execute(
+                "SELECT status FROM tickets WHERE id = ?",
+                (ticket_id,),
+            ).fetchone()
+            if not row:
+                return None
+            previous = row["status"]
+            if previous != status:
+                db.execute(
+                    "UPDATE tickets SET status = ? WHERE id = ?",
+                    (status, ticket_id),
+                )
+                self._audit(
+                    db,
+                    "ticket.status_changed",
+                    ticket_id=ticket_id,
+                    details={"from": previous, "to": status},
+                )
             return self.get(ticket_id, db=db)
+
+    def list_audit(self, limit: int = 100, ticket_id: int | None = None) -> list[dict]:
+        with self.connection() as db:
+            if ticket_id is None:
+                rows = db.execute(
+                    "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?",
+                    (limit,),
+                ).fetchall()
+            else:
+                rows = db.execute(
+                    "SELECT * FROM audit_events WHERE ticket_id = ? "
+                    "ORDER BY id DESC LIMIT ?",
+                    (ticket_id, limit),
+                ).fetchall()
+            return [self._audit_record(row) for row in rows]
 
     def stats(self) -> dict:
         with self.connection() as db:
@@ -151,7 +268,10 @@ class Store:
                 "minutes_saved_assumption": row["minutes_saved"],
                 "api_cost_usd": round(row["api_cost_usd"], 6),
                 "resolved": row["resolved"],
-                "categories": [{"name": x["category_label"], "count": x["count"]} for x in counts],
+                "categories": [
+                    {"name": x["category_label"], "count": x["count"]}
+                    for x in counts
+                ],
             }
 
     @staticmethod
@@ -159,4 +279,10 @@ class Store:
         item = dict(row)
         item["reasons"] = json.loads(item["reasons"])
         item["pii_detected"] = bool(item["pii_detected"])
+        return item
+
+    @staticmethod
+    def _audit_record(row: sqlite3.Row) -> dict:
+        item = dict(row)
+        item["details"] = json.loads(item["details"])
         return item

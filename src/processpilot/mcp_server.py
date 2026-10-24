@@ -51,6 +51,13 @@ def create_mcp_server():
         """Read workflow metrics and assumptions, without changing data."""
         return store.stats()
 
+    @mcp.tool()
+    def get_audit_events(limit: int = 20, ticket_id: int | None = None) -> list[dict]:
+        """Read recent workflow audit events (max 100), without changing data."""
+        if ticket_id is not None and ticket_id < 1:
+            raise ValueError("ticket_id must be positive")
+        return store.list_audit(max(1, min(limit, 100)), ticket_id=ticket_id)
+
     return mcp
 
 

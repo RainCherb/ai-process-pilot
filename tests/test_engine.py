@@ -151,3 +151,34 @@ def test_mcp_server_constructs_with_installed_sdk():
 
     server = create_mcp_server()
     assert server is not None
+
+
+def test_mcp_in_memory_client_roundtrip(tmp_path, monkeypatch):
+    import asyncio
+
+    from mcp import Client
+
+    from processpilot.mcp_server import create_mcp_server
+
+    monkeypatch.setenv("PILOT_DB", str(tmp_path / "mcp.sqlite3"))
+    server = create_mcp_server()
+
+    async def run():
+        async with Client(server) as client:
+            tools = await client.list_tools()
+            names = {tool.name for tool in tools.tools}
+            assert {
+                "preview_ticket",
+                "get_work_queue",
+                "get_process_metrics",
+                "get_audit_events",
+            } <= names
+            result = await client.call_tool(
+                "preview_ticket",
+                {"text": "Ошибка 500, сервис не работает"},
+            )
+            assert result.is_error is False
+            rendered = " ".join(getattr(block, "text", "") for block in result.content)
+            assert "technical" in rendered
+
+    asyncio.run(run())

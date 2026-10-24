@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .config import Settings
 from .engine import classify
@@ -50,6 +50,18 @@ class TicketInput(BaseModel):
     @classmethod
     def normalize_source(cls, value):
         return value.strip().lower() if isinstance(value, str) else value
+
+
+class BatchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[TicketInput] = Field(min_length=1, max_length=50)
+
+    @model_validator(mode="after")
+    def reject_remote_llm(self):
+        if any(item.use_llm for item in self.items):
+            raise ValueError("Batch endpoint работает только в offline-режиме; use_llm должен быть false")
+        return self
 
 
 class RoiInput(BaseModel):
@@ -120,7 +132,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         store.init()
         yield
 
-    app = FastAPI(title="AI Process Pilot", version="1.0.3", lifespan=lifespan)
+    app = FastAPI(title="AI Process Pilot", version="1.1.0", lifespan=lifespan)
     app.state.store = store
     app.state.settings = config
 
@@ -194,6 +206,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 raise HTTPException(502, str(exc)) from exc
         return store.create(result, data.source)
 
+    @app.post("/api/tickets/batch", status_code=201)
+    def create_ticket_batch(data: BatchInput):
+        analyses = [(classify(item.text), item.source) for item in data.items]
+        created = store.create_many(analyses)
+        return {"created": len(created), "items": created}
+
     @app.get("/api/tickets")
     def tickets(limit: int = 100):
         if not 1 <= limit <= 200:
@@ -219,6 +237,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/stats")
     def stats():
         return store.stats()
+
+    @app.get("/api/audit")
+    def audit_events(limit: int = 100, ticket_id: int | None = None):
+        if not 1 <= limit <= 200:
+            raise HTTPException(422, "limit должен быть от 1 до 200")
+        if ticket_id is not None and ticket_id < 1:
+            raise HTTPException(422, "ticket_id должен быть положительным")
+        return store.list_audit(limit=limit, ticket_id=ticket_id)
 
     @app.post("/api/roi")
     def roi(input: RoiInput):

@@ -6,7 +6,7 @@
 
 [![Tests and quality](https://github.com/RainCherb/ai-process-pilot/actions/workflows/ci.yml/badge.svg)](https://github.com/RainCherb/ai-process-pilot/actions/workflows/ci.yml) ![Offline by default](https://img.shields.io/badge/mode-offline%20by%20default-68b8a0) ![Python](https://img.shields.io/badge/Python-3.11%2B-3677a2) ![License](https://img.shields.io/badge/license-MIT-a0baca)
 
-**Текущая версия: 1.0.3.** Три прохода аудита исправили обработку невалидных входов, утечку SQLite-соединений, конкурентную загрузку демо, неоднозначную маршрутизацию, ложные юридические/срочные срабатывания, некорректный Unicode, небезопасные формы LLM URL и повреждённые usage-метаданные. Подробности: [audit-2026-10-24.md](docs/audit-2026-10-24.md).
+**Текущая версия: 1.1.0.** После трёх технических аудитов проект расширен операционными возможностями: пакетной обработкой, append-only журналом событий, измеримым quality gate классификатора, MCP 2.x integration tests и container smoke test. Ранее исправлены невалидные входы, SQLite-ресурсы, неоднозначная маршрутизация, Unicode/PII edge-cases и LLM URL/response validation. Подробности: [audit-2026-10-24.md](docs/audit-2026-10-24.md).
 
 **Что это:** рабочая система первичной обработки входящих клиентских запросов. Получает сообщение, определяет категорию и срочность, предлагает ответственную команду и дальнейшее действие, сохраняет обезличенную часть информации, показывает очередь и условную экономику процесса.
 
@@ -17,7 +17,10 @@
 - **Рабочий интерфейс на русском:** очередь обращений, приоритеты, статус выполнения, причины маршрутизации.
 - **Демо без ключей:** рабочий rules-based движок определяет тематику и важность офлайн, без запросов во внешние AI-сервисы.
 - **LLM только по желанию:** OpenAI-compatible API (например, локальный Ollama с совместимым интерфейсом); модель формирует дополнительное предложение действия, но **не может менять категорию или приоритет**.
-- **MCP:** три инструмента для AI coding agents: предварительная классификация, очередь и метрики (stdio, отдельный процесс).
+- **Пакетная обработка:** до 50 обращений одним атомарным запросом и отдельный интерфейс для bulk intake.
+- **Audit trail:** append-only события создания, batch-загрузки и смены статусов без сохранения исходного текста в журнале.
+- **Quality gate:** размеченный JSONL-набор и CI-порог качества для категории/приоритета; правила нельзя ухудшить незаметно.
+- **MCP:** четыре read-only инструмента для AI coding agents: предварительная классификация, очередь, метрики и журнал событий (stdio, отдельный процесс).
 - **API:** FastAPI, Pydantic, Swagger `/docs`, SQLite.
 - **Сценарный ROI-калькулятор:** показывает стоимость предполагаемого высвобождения времени и отдельно API-расходы; не выдаёт предположения за достигнутую экономию.
 - **Осторожность с данными:** до записи в БД маскируются типовые email и российские номера телефонов. Это **не полная анонимизация**.
@@ -63,10 +66,12 @@ curl http://127.0.0.1:8000/api/stats
 | HTTP | Путь | Назначение |
 | --- | --- | --- |
 | POST | `/api/tickets` | Классификация и запись обращения |
+| POST | `/api/tickets/batch` | Атомарная обработка до 50 обращений |
 | GET | `/api/tickets` | Очередь и результаты |
 | GET | `/api/tickets/{id}` | Детали и объяснение |
 | PATCH | `/api/tickets/{id}/status?status=resolved` | Обновление статуса человеком |
 | GET | `/api/stats` | Сводка процесса |
+| GET | `/api/audit` | Последние события процесса; можно фильтровать по ticket_id |
 | POST | `/api/roi` | Сценарная оценка стоимости времени |
 | POST | `/api/demo/seed` | Шесть тестовых обращений, без повторной загрузки |
 | GET | `/api/health` | Проверка режима и доступности |
@@ -109,7 +114,7 @@ python -m processpilot.mcp_server
 }
 ```
 
-Инструменты: `preview_ticket(text)` — предварительный разбор без сохранения; `get_work_queue(limit)` — чтение очереди; `get_process_metrics()` — статистика. MCP использует тот же `PILOT_DB`, что и веб-сервис. Формат конфигурации конкретного MCP-клиента может отличаться.
+Инструменты: `preview_ticket(text)` — предварительный разбор без сохранения; `get_work_queue(limit)` — чтение очереди; `get_process_metrics()` — статистика; `get_audit_events(limit, ticket_id)` — журнал workflow-событий. MCP использует тот же `PILOT_DB`, что и веб-сервис. Формат конфигурации конкретного MCP-клиента может отличаться.
 
 ## Экономика: что считается, а что нет
 
@@ -119,7 +124,7 @@ python -m processpilot.mcp_server
 
 ## Технологии
 
-**Backend:** Python 3.11+, FastAPI, Pydantic, SQLite, httpx. **Frontend:** HTML, CSS, JavaScript без внешних зависимостей. **Интеграции:** optional OpenAI-compatible LLM, MCP 2.x / MCPServer. **Доставка:** Docker, Docker Compose, GitHub Actions, pytest.
+**Backend:** Python 3.11+, FastAPI, Pydantic, SQLite, httpx. **Frontend:** HTML, CSS, JavaScript без внешних зависимостей. **Интеграции:** optional OpenAI-compatible LLM, MCP 2.x / MCPServer. **Quality:** labeled evaluation set, pytest, Ruff, GitHub Actions. **Доставка:** Docker, hardened Docker Compose, healthcheck, wheel/container smoke tests.
 
 ## Документация
 
@@ -127,6 +132,8 @@ python -m processpilot.mcp_server
 - [Правила безопасного использования (обязательно перед production)](docs/security-ru.md)
 - [План обучения сотрудников на 5 дней](docs/employee-training-ru.md)
 - [Пилот внедрения и оценка стоимости](docs/business-case-ru.md)
+- [Методика оценки качества классификатора](docs/evaluation.md)
+- [История изменений](CHANGELOG.md)
 
 ## Проверка качества
 
@@ -134,6 +141,7 @@ python -m processpilot.mcp_server
 python -m pip install -e '.[dev]'
 pytest -q
 ruff check src tests
+processpilot-eval tests/fixtures/evaluation.jsonl
 ```
 
 ## Границы проекта

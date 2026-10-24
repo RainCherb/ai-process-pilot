@@ -1,0 +1,24 @@
+{"text":"Пришлите счёт на оплату за октябрь","category":"billing","priority":"low"}
+{"text":"Нужен возврат средств по двойной оплате","category":"billing","priority":"low"}
+{"text":"Payment failed, please send a refund","category":"billing","priority":"low"}
+{"text":"Ошибка 500 при входе в кабинет","category":"technical","priority":"medium"}
+{"text":"Приложение падает после обновления","category":"technical","priority":"medium"}
+{"text":"Bug: форма не открывается в Safari","category":"technical","priority":"medium"}
+{"text":"Сколько стоит тариф для команды из 20 человек?","category":"sales","priority":"low"}
+{"text":"Хотим демо и коммерческое предложение","category":"sales","priority":"low"}
+{"text":"Please send pricing for the enterprise plan","category":"sales","priority":"low"}
+{"text":"Где мой заказ? Доставка задерживается","category":"delivery","priority":"low"}
+{"text":"Курьер не приехал, посылка всё ещё в пути","category":"delivery","priority":"low"}
+{"text":"Shipping status for my order","category":"delivery","priority":"low"}
+{"text":"Здравствуйте, хочу задать общий вопрос","category":"general","priority":"low"}
+{"text":"Спасибо за помощь, всё получилось","category":"general","priority":"low"}
+{"text":"Подскажите режим работы вашей команды","category":"general","priority":"low"}
+{"text":"СРОЧНО: сервис недоступен для всех клиентов","category":"general","priority":"high"}
+{"text":"Критичный баг: ошибка 500 у всех клиентов","category":"technical","priority":"high"}
+{"text":"Security incident затронул всех клиентов","category":"general","priority":"high"}
+{"text":"Вопрос по договору поставки","category":"general","priority":"medium"}
+{"text":"По договору обращается юрист","category":"general","priority":"medium"}
+{"text":"Ошибка оплаты заказа","category":"technical","priority":"medium"}
+{"text":"Это несрочно, небольшая ошибка в тексте","category":"technical","priority":"medium"}
+{"text":"Нужна посуда для кухни","category":"general","priority":"low"}
+{"text":"Планируем security review в следующем месяце","category":"general","priority":"low"}

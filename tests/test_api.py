@@ -142,6 +142,9 @@ def test_dashboard_assets_and_security_headers(tmp_path):
         assert page.headers["x-frame-options"] == "DENY"
         assert "default-src 'self'" in page.headers["content-security-policy"]
         assert "server-status-title" in page.text
+        assert 'id="batch-input"' in page.text
+        assert 'id="audit-events"' in page.text
+        assert "v1.1.0" in page.text
         assert client.get("/app.css").status_code == 200
         assert client.get("/app.js").status_code == 200
         assert client.get("/openapi.json").status_code == 200
@@ -164,3 +167,61 @@ def test_roi_value_uses_unrounded_hours(tmp_path):
         ).json()
         assert roi["hours_assumption"] == 0.07
         assert roi["potential_labor_value_rub"] == 60.0
+
+
+def test_batch_intake_is_atomic_and_audited(tmp_path):
+    with make_client(tmp_path) as client:
+        payload = {
+            "items": [
+                {"text": "Ошибка 500 при входе", "source": "crm"},
+                {"text": "Нужна цена тарифа", "source": "email"},
+                {"text": "Где мой заказ, доставка задерживается", "source": "web"},
+            ]
+        }
+        response = client.post("/api/tickets/batch", json=payload)
+        assert response.status_code == 201
+        body = response.json()
+        assert body["created"] == 3
+        assert len(body["items"]) == 3
+        assert client.get("/api/stats").json()["total"] == 3
+
+        audit = client.get("/api/audit?limit=20").json()
+        event_types = [event["event_type"] for event in audit]
+        assert event_types.count("ticket.created") == 3
+        assert "batch.created" in event_types
+        assert all("text" not in event["details"] for event in audit)
+
+
+def test_batch_rejects_llm_and_oversized_batch(tmp_path):
+    with make_client(tmp_path) as client:
+        remote = client.post(
+            "/api/tickets/batch",
+            json={"items": [{"text": "Нужна цена тарифа", "use_llm": True}]},
+        )
+        assert remote.status_code == 422
+
+        oversized = {
+            "items": [{"text": f"Обычный запрос клиента {i}"} for i in range(51)]
+        }
+        assert client.post("/api/tickets/batch", json=oversized).status_code == 422
+        assert client.get("/api/stats").json()["total"] == 0
+
+
+def test_status_changes_are_written_to_audit_log(tmp_path):
+    with make_client(tmp_path) as client:
+        ticket = client.post("/api/tickets", json={"text": "Обычный запрос клиента"}).json()
+        client.patch(f"/api/tickets/{ticket['id']}/status?status=in_progress")
+        client.patch(f"/api/tickets/{ticket['id']}/status?status=resolved")
+
+        audit = client.get(f"/api/audit?ticket_id={ticket['id']}").json()
+        changes = [x for x in audit if x["event_type"] == "ticket.status_changed"]
+        assert len(changes) == 2
+        assert changes[0]["details"] == {"from": "in_progress", "to": "resolved"}
+        assert changes[1]["details"] == {"from": "new", "to": "in_progress"}
+
+
+def test_audit_query_validation(tmp_path):
+    with make_client(tmp_path) as client:
+        assert client.get("/api/audit?limit=0").status_code == 422
+        assert client.get("/api/audit?limit=201").status_code == 422
+        assert client.get("/api/audit?ticket_id=0").status_code == 422
